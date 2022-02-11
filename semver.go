@@ -95,9 +95,9 @@ func (s *Semver) Bump(b Bump) {
 // Applying an invalid bump will result in no op.
 func (s *Semver) PeekBump(b Bump) Semver {
 	ns := Semver{
-		s.Patch,
-		s.Minor,
 		s.Major,
+		s.Minor,
+		s.Patch,
 		s.hasV,
 	}
 	switch b {

@@ -9,10 +9,50 @@ import (
 
 func TestSemver(t *testing.T) {
 	t.Parallel()
+	t.Run("Bump", TestBump)
 	t.Run("Parse", TestParse)
 	t.Run("After", TestAfter)
 	t.Run("Before", TestBefore)
 	t.Run("Equals", TestEquals)
+}
+
+func TestBump(t *testing.T) {
+	t.Parallel()
+	runs := map[string]struct {
+		input    *Semver
+		bump     Bump
+		expected *Semver
+	}{
+		"invalid": {
+			New(1, 2, 3),
+			BumpInvalid,
+			New(1, 2, 3),
+		},
+		"patch": {
+			New(1, 2, 9),
+			BumpPatch,
+			New(1, 2, 10),
+		},
+		"minor": {
+			New(3, 4, 6),
+			BumpMinor,
+			New(3, 5, 0),
+		},
+		"major": {
+			New(0, 4, 2),
+			BumpMajor,
+			New(1, 0, 0),
+		},
+	}
+
+	for run, data := range runs {
+		data := data
+		t.Run(run, func(t *testing.T) {
+			t.Parallel()
+			data.input.Bump(data.bump)
+			assert.EqualValues(t, data.expected, data.input)
+		})
+	}
 }
 
 func TestParse(t *testing.T) {
