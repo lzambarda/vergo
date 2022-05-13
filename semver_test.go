@@ -19,29 +19,46 @@ func TestSemver(t *testing.T) {
 func TestBump(t *testing.T) {
 	t.Parallel()
 	runs := map[string]struct {
-		input    *Semver
-		bump     Bump
-		expected *Semver
+		input       *Semver
+		bump        Bump
+		expected    *Semver
+		expectedErr error
 	}{
 		"invalid": {
-			New(1, 2, 3),
+			New(1, 2, 3, ""),
 			BumpInvalid,
-			New(1, 2, 3),
+			New(1, 2, 3, ""),
+			nil,
 		},
 		"patch": {
-			New(1, 2, 9),
+			New(1, 2, 9, "rc1"),
 			BumpPatch,
-			New(1, 2, 10),
+			New(1, 2, 10, ""),
+			nil,
 		},
 		"minor": {
-			New(3, 4, 6),
+			New(3, 4, 6, "rc1"),
 			BumpMinor,
-			New(3, 5, 0),
+			New(3, 5, 0, ""),
+			nil,
 		},
 		"major": {
-			New(0, 4, 2),
+			New(0, 4, 2, "rc1"),
 			BumpMajor,
-			New(1, 0, 0),
+			New(1, 0, 0, ""),
+			nil,
+		},
+		"rc": {
+			New(0, 4, 2, "rc1"),
+			BumpReleaseCandidate,
+			New(0, 4, 2, "rc2"),
+			nil,
+		},
+		"rc eks real life": {
+			New(1, 22, 6, "eks-7d68063"),
+			BumpReleaseCandidate,
+			&Semver{1, 22, 6, false, "eks-7d68063"},
+			ErrMalformedLabel,
 		},
 	}
 
@@ -85,17 +102,27 @@ func TestParse(t *testing.T) {
 		"success no v": {
 			"1.2.3",
 			nil,
-			&Semver{1, 2, 3, false},
+			&Semver{1, 2, 3, false, ""},
 		},
 		"success with v": {
 			"v41.52.63",
 			nil,
-			&Semver{41, 52, 63, true},
+			&Semver{41, 52, 63, true, ""},
 		},
 		"success pad": {
 			"  v1.2.3 ",
 			nil,
-			&Semver{1, 2, 3, true},
+			&Semver{1, 2, 3, true, ""},
+		},
+		"success rc": {
+			"v1.2.3-rc1",
+			nil,
+			&Semver{1, 2, 3, true, "rc1"},
+		},
+		"eks real life": {
+			"v1.22.6-eks-7d68063",
+			nil,
+			&Semver{1, 22, 6, true, "eks-7d68063"},
 		},
 	}
 
@@ -122,38 +149,48 @@ func TestAfter(t *testing.T) {
 		expected bool
 	}{
 		"major false": {
-			&Semver{1, 0, 0, false},
-			&Semver{2, 0, 0, false},
+			&Semver{1, 0, 0, false, ""},
+			&Semver{2, 0, 0, false, ""},
 			false,
 		},
 		"major true": {
-			&Semver{2, 0, 0, false},
-			&Semver{1, 0, 0, false},
+			&Semver{2, 0, 0, false, ""},
+			&Semver{1, 0, 0, false, ""},
 			true,
 		},
 		"minor false": {
-			&Semver{0, 1, 0, false},
-			&Semver{0, 2, 0, false},
+			&Semver{0, 1, 0, false, ""},
+			&Semver{0, 2, 0, false, ""},
 			false,
 		},
 		"minor true": {
-			&Semver{0, 2, 0, false},
-			&Semver{0, 1, 0, false},
+			&Semver{0, 2, 0, false, ""},
+			&Semver{0, 1, 0, false, ""},
 			true,
 		},
 		"patch false": {
-			&Semver{0, 0, 1, false},
-			&Semver{0, 0, 2, false},
+			&Semver{0, 0, 1, false, ""},
+			&Semver{0, 0, 2, false, ""},
 			false,
 		},
 		"patch true": {
-			&Semver{0, 0, 2, false},
-			&Semver{0, 0, 1, false},
+			&Semver{0, 0, 2, false, ""},
+			&Semver{0, 0, 1, false, ""},
+			true,
+		},
+		"rc false": {
+			&Semver{0, 0, 1, false, "-rc1"},
+			&Semver{0, 0, 1, false, "-rc2"},
+			false,
+		},
+		"rc true": {
+			&Semver{0, 0, 1, false, "-rc10"},
+			&Semver{0, 0, 1, false, "-rc1"},
 			true,
 		},
 		"equal false": {
-			&Semver{1, 2, 3, false},
-			&Semver{1, 2, 3, false},
+			&Semver{1, 2, 3, false, ""},
+			&Semver{1, 2, 3, false, ""},
 			false,
 		},
 	}
@@ -176,38 +213,48 @@ func TestBefore(t *testing.T) {
 		expected bool
 	}{
 		"major false": {
-			&Semver{2, 0, 0, false},
-			&Semver{1, 0, 0, false},
+			&Semver{2, 0, 0, false, ""},
+			&Semver{1, 0, 0, false, ""},
 			false,
 		},
 		"major true": {
-			&Semver{1, 0, 0, false},
-			&Semver{2, 0, 0, false},
+			&Semver{1, 0, 0, false, ""},
+			&Semver{2, 0, 0, false, ""},
 			true,
 		},
 		"minor false": {
-			&Semver{0, 2, 0, false},
-			&Semver{0, 1, 0, false},
+			&Semver{0, 2, 0, false, ""},
+			&Semver{0, 1, 0, false, ""},
 			false,
 		},
 		"minor true": {
-			&Semver{0, 1, 0, false},
-			&Semver{0, 2, 0, false},
+			&Semver{0, 1, 0, false, ""},
+			&Semver{0, 2, 0, false, ""},
 			true,
 		},
 		"patch false": {
-			&Semver{0, 0, 2, false},
-			&Semver{0, 0, 1, false},
+			&Semver{0, 0, 2, false, ""},
+			&Semver{0, 0, 1, false, ""},
 			false,
 		},
 		"patch true": {
-			&Semver{0, 0, 1, false},
-			&Semver{0, 0, 2, false},
+			&Semver{0, 0, 1, false, ""},
+			&Semver{0, 0, 2, false, ""},
+			true,
+		},
+		"rc false": {
+			&Semver{0, 0, 1, false, "rc6"},
+			&Semver{0, 0, 1, false, "rc5"},
+			false,
+		},
+		"rc true": {
+			&Semver{0, 0, 1, false, "rc1"},
+			&Semver{0, 0, 1, false, "rc8"},
 			true,
 		},
 		"equal false": {
-			&Semver{1, 2, 3, false},
-			&Semver{1, 2, 3, false},
+			&Semver{1, 2, 3, false, ""},
+			&Semver{1, 2, 3, false, ""},
 			false,
 		},
 	}
@@ -230,28 +277,33 @@ func TestEquals(t *testing.T) {
 		expected bool
 	}{
 		"major false": {
-			&Semver{1, 0, 0, false},
-			&Semver{2, 0, 0, false},
+			&Semver{1, 0, 0, false, ""},
+			&Semver{2, 0, 0, false, ""},
 			false,
 		},
 		"minor false": {
-			&Semver{0, 1, 0, false},
-			&Semver{0, 2, 0, false},
+			&Semver{0, 1, 0, false, ""},
+			&Semver{0, 2, 0, false, ""},
 			false,
 		},
 		"patch false": {
-			&Semver{0, 0, 1, false},
-			&Semver{0, 0, 2, false},
+			&Semver{0, 0, 1, false, ""},
+			&Semver{0, 0, 2, false, ""},
+			false,
+		},
+		"rc false": {
+			&Semver{0, 0, 1, false, "rc1"},
+			&Semver{0, 0, 1, false, "rc2"},
 			false,
 		},
 		"true": {
-			&Semver{1, 2, 3, false},
-			&Semver{1, 2, 3, false},
+			&Semver{1, 2, 3, false, ""},
+			&Semver{1, 2, 3, false, ""},
 			true,
 		},
 		"true diff v": {
-			&Semver{1, 2, 3, true},
-			&Semver{1, 2, 3, false},
+			&Semver{1, 2, 3, true, ""},
+			&Semver{1, 2, 3, false, ""},
 			true,
 		},
 	}

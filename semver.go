@@ -16,9 +16,10 @@ const (
 	BumpPatch
 	BumpMinor
 	BumpMajor
+	BumpReleaseCandidate
 )
 
-var bumpString = [4]string{"invalid", "patch", "minor", "major"}
+var bumpString = [5]string{"invalid", "patch", "minor", "major", "rc"}
 
 func (b Bump) String() string {
 	return bumpString[b]
@@ -40,12 +41,19 @@ type Semver struct {
 	Minor int
 	Patch int
 	hasV  bool
+	Label string
 }
 
 // New correctly instantiates a semver instance using the given major, minor and
 // patch.
-func New(major, minor, patch int) *Semver {
-	return &Semver{major, minor, patch, false}
+func New(major, minor, patch int, label string) *Semver {
+	return &Semver{
+		major,
+		minor,
+		patch,
+		false,
+		strings.ToLower(strings.TrimPrefix(label, "-")),
+	}
 }
 
 func (s *Semver) String() string {
@@ -53,7 +61,11 @@ func (s *Semver) String() string {
 	if s.hasV {
 		v = "v"
 	}
-	return fmt.Sprintf("%s%d.%d.%d", v, s.Major, s.Minor, s.Patch)
+	l := ""
+	if s.Label != "" {
+		l = "-" + s.Label
+	}
+	return fmt.Sprintf("%s%d.%d.%d%s", v, s.Major, s.Minor, s.Patch, l)
 }
 
 // ParseSemver returns a semver from the given string.
@@ -78,40 +90,60 @@ func ParseSemver(semver string) (s *Semver, err error) {
 	if err != nil {
 		return nil, ErrMalformedMinor
 	}
-	s.Patch, err = strconv.Atoi(parts[2])
+	patch, label, _ := strings.Cut(parts[2], "-")
+	s.Patch, err = strconv.Atoi(patch)
 	if err != nil {
 		return nil, ErrMalformedPatch
 	}
+	s.Label = label
 	return s, nil
 }
 
 // Bump applies the given bump to this semver.
-func (s *Semver) Bump(b Bump) {
-	ns := s.PeekBump(b)
+func (s *Semver) Bump(b Bump) error {
+	ns, err := s.PeekBump(b)
+	if err != nil {
+		return err
+	}
 	*s = ns
+	return nil
 }
 
 // PeekBump returns a copy of this semver with the applied Bump.
 // Applying an invalid bump will result in no op.
-func (s *Semver) PeekBump(b Bump) Semver {
+func (s *Semver) PeekBump(b Bump) (Semver, error) {
 	ns := Semver{
 		s.Major,
 		s.Minor,
 		s.Patch,
 		s.hasV,
+		s.Label,
 	}
 	switch b {
+	case BumpReleaseCandidate:
+		_, post, found := strings.Cut(s.Label, "rc")
+		if !found {
+			return Semver{}, ErrMalformedLabel
+		}
+		postNum, err := strconv.Atoi(post)
+		if err != nil {
+			return Semver{}, ErrMalformedLabel
+		}
+		ns.Label = fmt.Sprintf("rc%d", postNum+1)
 	case BumpPatch:
+		ns.Label = ""
 		ns.Patch++
 	case BumpMinor:
+		ns.Label = ""
 		ns.Patch = 0
 		ns.Minor++
 	case BumpMajor:
+		ns.Label = ""
 		ns.Patch = 0
 		ns.Minor = 0
 		ns.Major++
 	}
-	return ns
+	return ns, nil
 }
 
 // UnmarshalYAML sets the fields in the unmarshal target according to the
@@ -153,6 +185,9 @@ func (s *Semver) After(other *Semver) bool {
 	if s.Patch > other.Patch {
 		return true
 	}
+	if s.Label > other.Label {
+		return true
+	}
 	return false
 }
 
@@ -173,11 +208,14 @@ func (s *Semver) Before(other *Semver) bool {
 	if s.Patch < other.Patch {
 		return true
 	}
+	if s.Label < other.Label {
+		return true
+	}
 	return false
 }
 
 // Equals only checks equality of version, not whether they both have a
 // prepended "v" or not.
 func (s *Semver) Equals(other *Semver) bool {
-	return s.Patch == other.Patch && s.Minor == other.Minor && s.Major == other.Major
+	return s.Patch == other.Patch && s.Minor == other.Minor && s.Major == other.Major && s.Label == other.Label
 }
